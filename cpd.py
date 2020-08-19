@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 from pycpd import AffineRegistration
 import numpy as np
 from scipy.spatial.distance import cdist
+from PIL import Image
+import cv2
 
 def visualize(iteration, error, X, Y, ax):
     plt.cla()
@@ -42,29 +44,45 @@ def apa():
     print(A)
     print(B)
     
-    C = np.vstack((A, B))
+    C = np.append(A, B[:, None], axis=1)
     print(C)
+    print(C.shape)
 
 def main():
-    X = np.load('pts1.npy')
-    Y = np.load('pts2.npy')
+    np_load_old = np.load
+    np.load = lambda *a,**k: np_load_old(*a, allow_pickle=True, **k)
+    all_pts1 = np.load('all_pts1.npy')
+    all_pts2 = np.load('all_pts2.npy')
+    np.load = np_load_old
 
-    Y = Y[~np.all(cdist(Y, X) >= 20, axis=1)]
+    for ts, X in all_pts1.item().items():
+        Y = all_pts2.item()[ts]
 
-    fig = plt.figure()
-    fig.add_axes([0, 0, 1, 1])
-    callback = partial(visualize, ax=fig.axes[0])
+        Y = Y[~np.all(cdist(Y, X) >= 20, axis=1)]
 
-    reg = AffineRegistration(**{'X': X, 'Y': Y})
-    TY, (B_reg, t_reg) = reg.register(callback)
-    plt.show()
+        fig = plt.figure()
+        fig.add_axes([0, 0, 1, 1])
+        callback = partial(visualize, ax=fig.axes[0])
 
-    vis_pts(X, Y)
+        reg = AffineRegistration(**{'X': Y, 'Y': X})
+        TY, (B_reg, t_reg) = reg.register(callback)
+        plt.show()
 
-    Xp = np.dot(X, np.linalg.inv(B_reg)) + np.tile(-t_reg, (X.shape[0], 1))
-    Xp = Xp.astype(int)
+        vis_pts(X, Y)
 
-    vis_pts(Xp, Y)
+        Xp = np.dot(X, B_reg) + np.tile(t_reg, (X.shape[0], 1))
+        Xp = Xp.astype(int)
+
+        vis_pts(Xp, Y)
+
+        M = np.append(B_reg, t_reg[:, None], axis=1)
+
+        frame = np.array(Image.open('frames/frame_' + str(ts) + '.png'))
+        plt.imshow(frame)
+        plt.show()
+        frame_warped = cv2.warpAffine(frame, M, (frame.shape[1], frame.shape[0]))
+        plt.imshow(frame_warped)
+        plt.show()
 
 if __name__ == '__main__':
     main()
