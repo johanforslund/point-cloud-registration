@@ -37,17 +37,6 @@ def vis_pts(X=None, Y=None):
     plt.imshow(img)
     plt.show()
 
-def apa():
-    A = np.random.rand(2, 2)
-    B = np.random.rand(2)
-
-    print(A)
-    print(B)
-    
-    C = np.append(A, B[:, None], axis=1)
-    print(C)
-    print(C.shape)
-
 def main():
     np_load_old = np.load
     np.load = lambda *a,**k: np_load_old(*a, allow_pickle=True, **k)
@@ -64,24 +53,53 @@ def main():
         fig.add_axes([0, 0, 1, 1])
         callback = partial(visualize, ax=fig.axes[0])
 
-        reg = AffineRegistration(**{'X': Y, 'Y': X})
+        reg = AffineRegistration(**{'X': Y, 'Y': X, 'max_iterations': 30})
         TY, (B_reg, t_reg) = reg.register(callback)
+        P = reg.P
+
+        max_vals = np.max(P, axis=1)
+        max_ind = np.argmax(P, axis=1)
+        X_ind = np.where(max_vals > 0.1)[0]
+        print(len(X_ind))
+        Y_ind = max_ind[X_ind]
+        
         plt.show()
 
+        Y_orig = np.copy(Y)
+
+        X = X[X_ind]
+        Y = Y[Y_ind]
         vis_pts(X, Y)
 
         Xp = np.dot(X, B_reg) + np.tile(t_reg, (X.shape[0], 1))
         Xp = Xp.astype(int)
 
+        homography, mask = cv2.findHomography(
+            np.array(X), np.array(Y), cv2.RANSAC, ransacReprojThreshold=5
+        )
+
         vis_pts(Xp, Y)
 
-        M = np.append(B_reg, t_reg[:, None], axis=1)
+        M = np.append(B_reg.T, t_reg[:, None], axis=1)
 
         frame = np.array(Image.open('frames/frame_' + str(ts) + '.png'))
-        plt.imshow(frame)
+        frame_lines = np.copy(frame)
+        frame_lines[Y[:, 1], Y[:, 0], 0] = 255
+        frame_lines[X[:, 1], X[:, 0], 1] = 255
+        plt.imshow(frame_lines)
         plt.show()
-        frame_warped = cv2.warpAffine(frame, M, (frame.shape[1], frame.shape[0]))
+        frame_warped = cv2.warpPerspective(frame, homography, (frame.shape[1], frame.shape[0]))
+        frame_warped[Y_orig[:, 1], Y_orig[:, 0]] = np.array([255, 0, 0])
+        try:
+            frame_warped[Xp[:, 1], Xp[:, 0], 1] = 255
+        except:
+            pass
         plt.imshow(frame_warped)
+        plt.show()
+
+        frame_warped2 = cv2.warpAffine(frame, M, (frame.shape[1], frame.shape[0]))
+        frame_warped2[Y_orig[:, 1], Y_orig[:, 0]] = np.array([255, 0, 0])
+        plt.imshow(frame_warped2)
         plt.show()
 
 if __name__ == '__main__':
